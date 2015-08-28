@@ -5,10 +5,14 @@ static EJDB *jb;
 
 int main() {
     setlocale(LC_ALL, "en_US.UTF-8");
-    jb = ejdbnew();
-    if (!ejdbopen(jb, "addressbook", JBOWRITER | JBOCREAT | JBOTRUNC)) {
-        return 1;
-    }
+  
+    if (!ordo_db_init("addressbook"))
+        return -1;
+
+    jb = ordo_db_get_by_name("addressbook");
+
+    if (jb == NULL)
+        return -1;
 
     //Get or create collection 'contacts'
     EJCOLL *coll = ejdbcreatecoll(jb, "contacts", NULL);
@@ -66,7 +70,6 @@ int main() {
     bson_destroy(&bq1);
 
     //Close database
-    ejdbclose(jb);
-    ejdbdel(jb);
+    ordo_db_close_by_name("addressbook");
     return 0;
 }

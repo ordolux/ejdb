@@ -5898,3 +5898,100 @@ static bool _qrycondcheckstror(const char *vbuf, const TCLIST *tokens) {
     }
     return false;
 }
+
+/*
+       ____           __      __              
+      / __ \_________/ /___  / /   __  ___  __
+     / / / / ___/ __  / __ \/ /   / / / / |/_/
+    / /_/ / /  / /_/ / /_/ / /___/ /_/ />  <  
+    \____/_/   \__,_/\____/_____/\__,_/_/|_|  
+                                              
+*/
+
+
+#define QJDBS_MAX 128
+
+struct QJDBS {
+    EJDB * db;
+    char * name;
+    bool isOpen;
+};
+
+static struct QJDBS * QJDBS_ARRAY[QJDBS_MAX];
+static int QJDBS_COUNTER = 0;
+
+void ordo_db_start_init()
+{
+    for (int i = 0; i < QJDBS_MAX; ++i)
+        QJDBS_ARRAY[i] = 0;
+}
+
+int ordo_db_index(const char * name_db)
+{
+    for (int i = 0; i < QJDBS_COUNTER; ++i)
+    {
+        struct QJDBS * _db = QJDBS_ARRAY[i];
+        if (_db == (void *)0) continue;
+        char * _name = (*_db).name;
+        if ((*_db).isOpen && strcmp(_name, name_db) == 0)
+            return i;
+    }
+
+    return -1;
+}
+
+EJDB * ordo_db_get_by_name(const char * name_db)
+{
+    int _index = ordo_db_index(name_db);
+    if (_index > -1)
+        return (*QJDBS_ARRAY[_index]).db;
+    return NULL;
+}
+
+bool ordo_db_init(const char * name_db)
+{   
+    if (QJDBS_COUNTER == 0)
+        ordo_db_start_init();
+
+    if (QJDBS_COUNTER >= QJDBS_MAX - 1)
+        return false;
+
+    if (ordo_db_index(name_db) > -1)
+        return false;
+    
+    EJDB * Qjb = ejdbnew();
+
+    QJDBS_ARRAY[QJDBS_COUNTER] = malloc(sizeof(struct QJDBS));
+    (*QJDBS_ARRAY[QJDBS_COUNTER]).name = (char *)name_db;
+    (*QJDBS_ARRAY[QJDBS_COUNTER]).db = Qjb;
+    (*QJDBS_ARRAY[QJDBS_COUNTER]).isOpen = true;
+
+    if (!ejdbopen(Qjb, name_db, JBOWRITER | JBOCREAT | JBOTRUNC))
+        (*QJDBS_ARRAY[QJDBS_COUNTER]).isOpen = false;
+
+    QJDBS_COUNTER++;
+    return (*QJDBS_ARRAY[QJDBS_COUNTER-1]).isOpen;
+}
+
+void ordo_db_close_by_name(const char * name_db)
+{
+    int _index = ordo_db_index(name_db);
+
+    if (_index <= -1)
+        return;
+
+    ejdbclose((*QJDBS_ARRAY[_index]).db);
+    ejdbdel((*QJDBS_ARRAY[_index]).db);
+    free(QJDBS_ARRAY[_index]);
+}
+
+void ordo_db_close_by_index(int index)
+{
+    if (index < 0 || QJDBS_ARRAY[index] == (void *)0)
+        return;
+
+    ejdbclose((*QJDBS_ARRAY[index]).db);
+    ejdbdel((*QJDBS_ARRAY[index]).db);
+    free(QJDBS_ARRAY[index]);
+    QJDBS_ARRAY[index] = 0;
+}

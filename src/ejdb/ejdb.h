@@ -577,3 +577,22 @@ EJDB_EXTERN_C_END
 
 #endif        /* EJDB_H */
 
+
+/*
+       ____           __      __              
+      / __ \_________/ /___  / /   __  ___  __
+     / / / / ___/ __  / __ \/ /   / / / / |/_/
+    / /_/ / /  / /_/ / /_/ / /___/ /_/ />  <  
+    \____/_/   \__,_/\____/_____/\__,_/_/|_|  
+                                              
+*/
+
+EJDB_EXTERN_C_START
+
+EJDB_EXPORT bool ordo_db_init(const char * name_db);
+EJDB_EXPORT int ordo_db_index(const char * name_db);
+EJDB_EXPORT EJDB * ordo_db_get_by_name(const char * name_db);
+EJDB_EXPORT void ordo_db_close_by_name(const char * name_db);
+EJDB_EXPORT void ordo_db_close_by_index(int index);
+
+EJDB_EXTERN_C_END
