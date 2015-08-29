@@ -5915,6 +5915,8 @@ struct QJDBS {
     EJDB * db;
     char * name;
     bool isOpen;
+    int collmax;
+    EJCOLL * ocoll[QJDBS_MAX];
 };
 
 static struct QJDBS * QJDBS_ARRAY[QJDBS_MAX];
@@ -5931,7 +5933,7 @@ int ordo_db_index(const char * name_db)
     for (int i = 0; i < QJDBS_COUNTER; ++i)
     {
         struct QJDBS * _db = QJDBS_ARRAY[i];
-        if (_db == (void *)0) continue;
+        if (_db == 0) continue;
         char * _name = (*_db).name;
         if ((*_db).isOpen && strcmp(_name, name_db) == 0)
             return i;
@@ -5948,29 +5950,267 @@ EJDB * ordo_db_get_by_name(const char * name_db)
     return NULL;
 }
 
-bool ordo_db_init(const char * name_db)
+bool ordo_is_db_index(int index)
+{
+    if (index < 0 || QJDBS_ARRAY[index] == 0)
+        return false;
+    return true;
+}
+
+bool ordo_is_db_coll_index(int index, int coll_index)
+{
+    if (!ordo_is_db_index(index) || coll_index < 0 || (*QJDBS_ARRAY[index]).ocoll[coll_index] == 0)
+        return false;
+    return true;
+}
+
+int ordo_db_init(const char * name_db)
 {   
     if (QJDBS_COUNTER == 0)
         ordo_db_start_init();
 
-    if (QJDBS_COUNTER >= QJDBS_MAX - 1)
-        return false;
+    if (QJDBS_COUNTER >= QJDBS_MAX)
+        return -1;
 
     if (ordo_db_index(name_db) > -1)
-        return false;
+        return -1;
     
     EJDB * Qjb = ejdbnew();
 
     QJDBS_ARRAY[QJDBS_COUNTER] = malloc(sizeof(struct QJDBS));
+
     (*QJDBS_ARRAY[QJDBS_COUNTER]).name = (char *)name_db;
     (*QJDBS_ARRAY[QJDBS_COUNTER]).db = Qjb;
     (*QJDBS_ARRAY[QJDBS_COUNTER]).isOpen = true;
+    (*QJDBS_ARRAY[QJDBS_COUNTER]).collmax = 0;
 
-    if (!ejdbopen(Qjb, name_db, JBOWRITER | JBOCREAT | JBOTRUNC))
+    for (int i = 0; i < QJDBS_MAX; ++i)
+        (*QJDBS_ARRAY[QJDBS_COUNTER]).ocoll[i] = 0;
+
+    if (!ejdbopen(Qjb, name_db, JBOWRITER | JBOCREAT))
         (*QJDBS_ARRAY[QJDBS_COUNTER]).isOpen = false;
 
     QJDBS_COUNTER++;
-    return (*QJDBS_ARRAY[QJDBS_COUNTER-1]).isOpen;
+    return QJDBS_COUNTER - 1;
+}
+
+int ordo_db_coll_bin(int index, const char * coll_name)
+{   
+    if (index < 0 || QJDBS_ARRAY[index] == 0)
+        return -1;
+
+    if ((*QJDBS_ARRAY[index]).collmax >= QJDBS_MAX)
+        return -1;
+
+    EJCOLL *coll = ejdbcreatecoll((*QJDBS_ARRAY[index]).db, coll_name, NULL);
+    (*QJDBS_ARRAY[index]).ocoll[(*QJDBS_ARRAY[index]).collmax] = coll;
+    (*QJDBS_ARRAY[index]).collmax++;
+
+    return (*QJDBS_ARRAY[index]).collmax - 1;
+}
+
+int ordo_db_get_all_from_coll(int index, int col_index, char ** dest)
+{
+    if (!ordo_is_db_coll_index(index, col_index))
+        return false;
+
+    EJDB * Qjb = (*QJDBS_ARRAY[index]).db;
+    EJCOLL * coll = (*QJDBS_ARRAY[index]).ocoll[col_index];
+
+    bson bq1;
+    bson_init_as_query(&bq1);
+    bson_finish(&bq1);
+
+    EJQ *q1 = ejdbcreatequery(Qjb, &bq1, NULL, 0, NULL);
+
+    uint32_t count;
+    TCLIST *res = ejdbqryexecute(coll, q1, &count, 0, NULL);
+
+    long str_size = 2;
+    *dest = malloc(sizeof(char)*str_size);
+    strcpy(*dest, "[");
+
+    for (int i = 0; i < TCLISTNUM(res); ++i) {
+        void *bsdata = TCLISTVALPTR(res, i);
+
+        char * _bf = NULL;
+        int size = 0;
+
+        if (i>0)
+            str_size += 1;
+
+        if (bson2json(bsdata, &_bf, &size) == BSON_OK) {
+            str_size += size;
+            *dest = realloc(*dest, sizeof(char)*str_size);
+            if (i>0)
+                strcat(*dest, ",");
+            strcat(*dest, _bf);
+        }
+    }
+    strcat(*dest, "]");
+
+    tclistdel(res);
+    bson_destroy(&bq1);
+    ejdbquerydel(q1);
+
+    return count;
+}
+
+int ordo_db_query_coll(int index, int col_index, const char * query, char ** dest)
+{
+    int init_size = 2;
+
+    *dest = malloc(sizeof(char)*init_size);
+    strcpy(*dest, "[");
+
+    if (!ordo_is_db_coll_index(index, col_index)) {
+        strcpy(*dest, "]");
+        return 0;
+    }
+
+    EJDB * Qjb = (*QJDBS_ARRAY[index]).db;
+    EJCOLL * coll = (*QJDBS_ARRAY[index]).ocoll[col_index];
+
+    bson * _query = json2bson(query);
+
+    EJQ *q1 = ejdbcreatequery(Qjb, _query, NULL, 0, NULL);
+
+    uint32_t count;
+    TCLIST *res = ejdbqryexecute(coll, q1, &count, 0, NULL);
+
+    for (int i = 0; i < TCLISTNUM(res); ++i) {
+        void *bsdata = TCLISTVALPTR(res, i);
+
+        char * _bf = NULL;
+        int size = 0;
+
+        if (i>0)
+            init_size += 1;
+
+        if (bson2json(bsdata, &_bf, &size) == BSON_OK) {
+            init_size += size;
+            *dest = realloc(*dest, sizeof(char)*init_size);
+            if (i>0)
+                strcat(*dest, ",");
+            strcat(*dest, _bf);
+        }
+    }
+
+    strcat(*dest, "]");
+
+    tclistdel(res);
+    bson_destroy(_query);
+    ejdbquerydel(q1);
+
+    return count;
+}
+
+int ordo_db_get_count_coll(int index, int col_index)
+{
+    if (!ordo_is_db_coll_index(index, col_index))
+        return 0;
+
+    EJDB * Qjb = (*QJDBS_ARRAY[index]).db;
+    EJCOLL * coll = (*QJDBS_ARRAY[index]).ocoll[col_index];
+
+    bson bq1;
+    bson_init_as_query(&bq1);
+    bson_finish(&bq1);
+
+    EJQ *q1 = ejdbcreatequery(Qjb, &bq1, NULL, 0, NULL);
+
+    uint32_t count;
+    TCLIST *res = ejdbqryexecute(coll, q1, &count, 0, NULL);
+
+    tclistdel(res);
+    bson_destroy(&bq1);
+    ejdbquerydel(q1);
+
+    return count;
+}
+
+bool ordo_get_by_id(int index, int col_index, const char * id, char ** dest)
+{
+    if (!ordo_is_db_coll_index(index, col_index))
+        return false;
+
+    bson_oid_t oid;
+    bson_oid_from_string(&oid, id);
+
+    EJCOLL *coll = (*QJDBS_ARRAY[index]).ocoll[col_index];
+
+    bson * data = ejdbloadbson(coll, &oid);
+
+    if (data == NULL)
+        return false;
+
+    bool result = false;
+    int size = 0;
+    char * _bf = NULL;
+
+    if (bson2json(((*data).data), &_bf, &size) == BSON_OK) {
+        *dest = malloc(sizeof(char)*size);
+        strcpy(*dest, _bf);
+        result = true;
+    }
+
+    bson_destroy(data);
+
+    return result;
+}
+
+bool ordo_db_remove_by_id(int index, int col_index, const char * id)
+{
+    if (!ordo_is_db_coll_index(index, col_index))
+        return false;
+
+    bson_oid_t oid;
+    bson_oid_from_string(&oid, id);
+
+    EJCOLL *coll = (*QJDBS_ARRAY[index]).ocoll[col_index];
+
+    return ejdbrmbson(coll, &oid);
+}
+
+bool ordo_db_sync(int index)
+{
+    if (!ordo_is_db_index(index))
+        return false;
+
+    EJDB * Qjb = (*QJDBS_ARRAY[index]).db;
+    return ejdbsyncdb(Qjb);
+}
+
+bool ordo_db_sync_coll(int index, int col_index)
+{
+    if (!ordo_is_db_coll_index(index, col_index))
+        return false;
+
+    EJDB * Qjb = (*QJDBS_ARRAY[index]).db;
+    EJCOLL * coll = (*QJDBS_ARRAY[index]).ocoll[col_index];
+
+    ejdbsyncoll(coll);
+
+    return ejdbsyncdb(Qjb);
+}
+
+int ordo_db_add_json(int index, int col_index, const char * json_data)
+{
+    if (index < 0 || QJDBS_ARRAY[index] == 0)
+        return -1;
+
+    if (col_index < 0 || (*QJDBS_ARRAY[index]).ocoll[col_index] == 0)
+        return -1;
+
+    EJCOLL *coll = (*QJDBS_ARRAY[index]).ocoll[col_index];
+
+    bson * new_record = json2bson(json_data);
+    bson_oid_t oid;
+
+    bool res = ejdbsavebson(coll, new_record, &oid);
+    bson_destroy(new_record);
+
+    return res ? 1 : -1;
 }
 
 void ordo_db_close_by_name(const char * name_db)
@@ -5987,7 +6227,7 @@ void ordo_db_close_by_name(const char * name_db)
 
 void ordo_db_close_by_index(int index)
 {
-    if (index < 0 || QJDBS_ARRAY[index] == (void *)0)
+    if (index < 0 || QJDBS_ARRAY[index] == 0)
         return;
 
     ejdbclose((*QJDBS_ARRAY[index]).db);

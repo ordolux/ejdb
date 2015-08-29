@@ -589,10 +589,19 @@ EJDB_EXTERN_C_END
 
 EJDB_EXTERN_C_START
 
-EJDB_EXPORT bool ordo_db_init(const char * name_db);
+EJDB_EXPORT int ordo_db_init(const char * name_db);
 EJDB_EXPORT int ordo_db_index(const char * name_db);
 EJDB_EXPORT EJDB * ordo_db_get_by_name(const char * name_db);
 EJDB_EXPORT void ordo_db_close_by_name(const char * name_db);
 EJDB_EXPORT void ordo_db_close_by_index(int index);
+EJDB_EXPORT int ordo_db_coll_bin(int index, const char * coll_name);
+EJDB_EXPORT int ordo_db_add_json(int index, int col_index, const char * data_json);
+EJDB_EXPORT int ordo_db_get_all_from_coll(int index, int col_index, char ** dest);
+EJDB_EXPORT int ordo_db_query_coll(int index, int col_index, const char * query, char ** dest);
+EJDB_EXPORT int ordo_db_get_count_coll(int index, int col_index);
+EJDB_EXPORT bool ordo_db_remove_by_id(int index, int col_index, const char * id);
+EJDB_EXPORT bool ordo_db_sync(int index);
+EJDB_EXPORT bool ordo_db_sync_coll(int index, int col_index);
+EJDB_EXPORT bool ordo_get_by_id(int index, int col_index, const char * id, char ** dest);
 
 EJDB_EXTERN_C_END

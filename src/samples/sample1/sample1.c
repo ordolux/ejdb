@@ -1,75 +1,30 @@
 #include "ejdb.h"
 #include <locale.h>
 
-static EJDB *jb;
 
 int main() {
+
     setlocale(LC_ALL, "en_US.UTF-8");
-  
-    if (!ordo_db_init("addressbook"))
-        return -1;
+    
+    int _db = ordo_db_init("addressbook");
 
-    jb = ordo_db_get_by_name("addressbook");
+    if (_db < 0) return -1;
 
-    if (jb == NULL)
-        return -1;
+    int _col = ordo_db_coll_bin(_db, "contacts");
 
-    //Get or create collection 'contacts'
-    EJCOLL *coll = ejdbcreatecoll(jb, "contacts", NULL);
+   // ordo_db_add_json(_db, _col, "{\"hello\":\"Паситесь мирные народы\"}");
 
-    bson bsrec;
-    bson_oid_t oid;
+    char * dest_data;
 
-    //One record
-    bson_init(&bsrec);
-    bson_append_string(&bsrec, "name", "John Travolta");
-    bson_append_string(&bsrec, "phone", "333-222-333");
-    bson_append_int(&bsrec, "age", 58);
-    bson_finish(&bsrec);
-    ejdbsavebson(coll, &bsrec, &oid);
-    fprintf(stderr, "\nSaved Travolta");
-    bson_destroy(&bsrec);
+    //ordo_db_get_all_from_coll(_db, _col, &dest_data);
 
+    //ordo_db_query_coll(_db, _col, "{\"hello\":{\"$begin\":\"Па\"}}", &dest_data);
 
-    //Another record
-    bson_init(&bsrec);
-    bson_append_string(&bsrec, "name", "Bruce Willis");
-    bson_append_string(&bsrec, "phone", "222-333-222");
-    bson_append_int(&bsrec, "age", 57);
-    bson_finish(&bsrec);
-    ejdbsavebson(coll, &bsrec, &oid);
-    fprintf(stderr, "\nSaved Bruce Willis");
-    bson_destroy(&bsrec);
+    ordo_get_by_id(_db, _col, "55e1ee3363969e4e00000000", &dest_data);
 
+    fprintf(stderr, "%s\n", dest_data);
 
-    //Now select one record.
-    //Query: {'name' : {'$begin' : 'Bru'}} //Name starts with 'Bru' string
-    bson bq1;
-    bson_init_as_query(&bq1);
-    bson_append_start_object(&bq1, "name");
-    bson_append_string(&bq1, "$begin", "Bru");
-    bson_append_finish_object(&bq1);
-    bson_finish(&bq1);
-    EJQ *q1 = ejdbcreatequery(jb, &bq1, NULL, 0, NULL);
+    ordo_db_close_by_index(_db);
 
-    uint32_t count;
-    TCLIST *res = ejdbqryexecute(coll, q1, &count, 0, NULL);
-    fprintf(stderr, "\n\nRecords found: %d\n", count);
-
-    for (int i = 0; i < TCLISTNUM(res); ++i) {
-        void *bsdata = TCLISTVALPTR(res, i);
-        bson_print_raw(bsdata, 0);
-    }
-    fprintf(stderr, "\n");
-
-    //Dispose result set
-    tclistdel(res);
-
-    //Dispose query
-    ejdbquerydel(q1);
-    bson_destroy(&bq1);
-
-    //Close database
-    ordo_db_close_by_name("addressbook");
     return 0;
 }
